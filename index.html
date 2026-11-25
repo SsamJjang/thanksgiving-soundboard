@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soundboard</title>
+<style>
+  :root {
+    --bg: #111;
+    --row: #181818;
+    --row-hover: #1e1e1e;
+    --line: #2a2a2a;
+    --text: #e8e8e8;
+    --muted: #888;
+    --accent: #4caf7d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, "Segoe UI", system-ui, sans-serif;
+    user-select: none;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+
+  header { display: flex; align-items: center; gap: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  .spacer { flex: 1; }
+  .field { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .field output { color: var(--text); width: 36px; font-variant-numeric: tabular-nums; }
+
+  button {
+    font: inherit; font-size: 13px; color: var(--text); background: transparent;
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 12px; cursor: pointer;
+  }
+  button:hover { background: var(--row-hover); }
+  input[type=range] { accent-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); margin: 0; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th {
+    text-align: left; font-weight: 500; font-size: 12px; color: var(--muted);
+    padding: 10px 10px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr.sfx { cursor: pointer; }
+  tr.sfx:hover td { background: var(--row-hover); }
+  tr.sfx.playing td { background: #16241c; }
+  tr.sfx.playing td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+  .key {
+    display: inline-block; width: 24px; height: 24px; line-height: 22px; text-align: center;
+    border: 1px solid var(--line); border-radius: 4px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  tr.playing .key { border-color: var(--accent); color: var(--accent); }
+
+  .play { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
+  .play svg { width: 12px; height: 12px; fill: currentColor; }
+
+  .name { font-weight: 500; }
+  .file { color: var(--muted); font-size: 12px; }
+
+  .progress { display: flex; align-items: center; gap: 10px; }
+  .bar { flex: 1; height: 4px; background: var(--line); border-radius: 2px; cursor: pointer; position: relative; }
+  .bar::before { content: ""; position: absolute; inset: -8px 0; } /* bigger click target */
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+  .time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; width: 82px; text-align: right; }
+
+  .vol { display: flex; align-items: center; gap: 8px; }
+  .vol input { width: 90px; }
+  .vol span { color: var(--muted); font-size: 12px; width: 32px; font-variant-numeric: tabular-nums; }
+
+  td.c { text-align: center; }
+  footer { margin-top: 18px; color: var(--muted); font-size: 12px; display: flex; gap: 22px; flex-wrap: wrap; }
+  kbd { font: inherit; color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Soundboard</h1>
+    <div class="spacer"></div>
+    <label class="field"><input id="exclusive" type="checkbox"> Cues 1–4 stop each other</label>
+    <label class="field">Master <input id="master" type="range" min="0" max="100"> <output id="masterOut"></output></label>
+    <button id="fadeAll">Fade all</button>
+    <button id="stopAll">Stop all</button>
+  </header>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:44px">Key</th>
+        <th style="width:46px"></th>
+        <th>Sound</th>
+        <th style="width:34%">Position</th>
+        <th style="width:150px">Volume</th>
+        <th style="width:50px" class="c">Loop</th>
+      </tr>
+    </thead>
+    <tbody id="list"></tbody>
+  </table>
+
+  <footer>
+    <span><kbd>1</kbd>–<kbd>4</kbd> play cue</span>
+    <span><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>4</kbd> fade out cue</span>
+    <span><kbd>Space</kbd> fade all</span>
+    <span><kbd>Esc</kbd> stop all</span>
+    <span><kbd>↑</kbd><kbd>↓</kbd> master volume</span>
+  </footer>
+</div>
+
+<script>
+// Only the four quiz cues get hotkeys. Everything else is click-to-play.
+const SOUNDS = [
+  { id: 'question', key: '1', name: 'Question Reveal', file: 'sounds/question_reveal.mp3' },
+  { id: 'timer',    key: '2', name: 'Timer Running',   file: 'sounds/timer_running.mp3', loop: true },
+  { id: 'holdup',   key: '3', name: 'Hold Up Answer',  file: 'sounds/hold_up_answer.wav' },
+  { id: 'answer',   key: '4', name: 'Answer Reveal',   file: 'sounds/answer_reveal.wav' },
+  { id: 'timeup',             name: 'Time Up',         file: 'sounds/time_up.wav' },
+  { id: 'bell',               name: 'Golden Bell',     file: 'sounds/golden_bell.mp3' },
+  { id: 'intro',              name: 'Grand Intro',     file: 'sounds/grand_intro.m4a' },
+  { id: 'award',              name: 'Award Ceremony',  file: 'sounds/award_ceremony.mp3' },
+];
+
+const FADE_MS = 700;
+const STORE = 'soundboard-v2';
+const saved = JSON.parse(localStorage.getItem(STORE) || '{}');
+const state = { master: saved.master ?? 0.8, exclusive: saved.exclusive ?? true, sfx: saved.sfx || {} };
+const save = () => localStorage.setItem(STORE, JSON.stringify(state));
+
+const $ = s => document.querySelector(s);
+const fmt = t => isFinite(t) ? `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}` : '-:--';
+const ICON_PLAY = '<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 12 12"><path d="M2 2h8v8H2z"/></svg>';
+
+const items = SOUNDS.map(s => {
+  const conf = state.sfx[s.id] = Object.assign({ vol: 1, loop: !!s.loop }, state.sfx[s.id]);
+  const audio = new Audio(s.file);
+  audio.preload = 'auto';
+  audio.loop = conf.loop;
+
+  const tr = document.createElement('tr');
+  tr.className = 'sfx';
+  tr.innerHTML = `
+    <td>${s.key ? `<span class="key">${s.key}</span>` : ''}</td>
+    <td><button class="play" title="Play / stop">${ICON_PLAY}</button></td>
+    <td><div class="name">${s.name}</div><div class="file">${s.file.split('/').pop()}</div></td>
+    <td><div class="progress"><div class="bar"><i></i></div><span class="time">-:--</span></div></td>
+    <td><div class="vol"><input type="range" min="0" max="100"><span></span></div></td>
+    <td class="c"><input type="checkbox" class="loop"></td>`;
+  $('#list').appendChild(tr);
+
+  const it = { ...s, conf, audio, tr, gain: 1, fade: null,
+    btn: tr.querySelector('.play'), bar: tr.querySelector('.bar i'), time: tr.querySelector('.time'), wasPlaying: null };
+  const vol = tr.querySelector('.vol input'), volOut = tr.querySelector('.vol span'), loop = tr.querySelector('.loop');
+  vol.value = Math.round(conf.vol * 100); volOut.textContent = vol.value + '%';
+  loop.checked = conf.loop;
+
+  // Clicking anywhere on the row toggles play, except on the controls themselves
+  tr.addEventListener('click', e => {
+    if (e.target.closest('input, .bar')) return;
+    isPlaying(it) ? stop(it) : play(it);
+  });
+  vol.addEventListener('input', () => { conf.vol = vol.value / 100; volOut.textContent = vol.value + '%'; applyVol(it); save(); });
+  loop.addEventListener('change', () => { conf.loop = audio.loop = loop.checked; save(); });
+  tr.querySelector('.bar').parentElement.addEventListener('click', e => {
+    const bar = e.target.closest('.bar');
+    if (!bar || !isFinite(audio.duration)) return;
+    const r = bar.getBoundingClientRect();
+    audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * audio.duration;
+  });
+  return it;
+});
+const byKey = Object.fromEntries(items.filter(i => i.key).map(i => [i.key, i]));
+
+const isPlaying = it => !it.audio.paused && !it.audio.ended;
+const applyVol = it => { it.audio.volume = Math.min(1, it.conf.vol * state.master * it.gain); };
+const endFade = it => { clearInterval(it.fade); it.fade = null; };
+
+function play(it) {
+  if (state.exclusive && it.key) items.forEach(o => { if (o !== it && o.key && isPlaying(o)) fadeOut(o, 250); });
+  endFade(it);
+  it.gain = 1; applyVol(it);
+  it.audio.currentTime = 0;
+  it.audio.play().catch(err => console.warn(err));
+}
+function stop(it) {
+  endFade(it);
+  it.audio.pause(); it.audio.currentTime = 0;
+  it.gain = 1; applyVol(it);
+}
+function fadeOut(it, ms = FADE_MS) {
+  if (!isPlaying(it)) return;
+  endFade(it);
+  const t0 = performance.now(), from = it.gain;
+  it.fade = setInterval(() => {
+    const k = Math.min(1, (performance.now() - t0) / ms);
+    it.gain = from * (1 - k); applyVol(it);
+    if (k === 1) stop(it);
+  }, 16);
+}
+
+(function tick() {
+  for (const it of items) {
+    const a = it.audio, on = isPlaying(it), d = a.duration;
+    if (on !== it.wasPlaying) {
+      it.wasPlaying = on;
+      it.tr.classList.toggle('playing', on);
+      it.btn.innerHTML = on ? ICON_STOP : ICON_PLAY;
+    }
+    it.bar.style.width = isFinite(d) && d ? (a.currentTime / d * 100) + '%' : '0';
+    it.time.textContent = on ? `${fmt(a.currentTime)} / ${fmt(d)}` : fmt(d);
+  }
+  requestAnimationFrame(tick);
+})();
+
+// Header controls
+const master = $('#master'), masterOut = $('#masterOut'), exclusive = $('#exclusive');
+function syncMaster() {
+  master.value = Math.round(state.master * 100);
+  masterOut.textContent = master.value + '%';
+  items.forEach(applyVol);
+}
+master.addEventListener('input', () => { state.master = master.value / 100; syncMaster(); save(); });
+exclusive.checked = state.exclusive;
+exclusive.addEventListener('change', () => { state.exclusive = exclusive.checked; save(); });
+$('#fadeAll').addEventListener('click', () => items.forEach(i => fadeOut(i)));
+$('#stopAll').addEventListener('click', () => items.forEach(stop));
+syncMaster();
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const m = /^(?:Digit|Numpad)([1-4])$/.exec(e.code); // e.code so Shift+1 still reads as 1
+  if (m) {
+    e.preventDefault();
+    if (!e.repeat) e.shiftKey ? fadeOut(byKey[m[1]]) : play(byKey[m[1]]);
+    return;
+  }
+  if (e.key === ' ') { e.preventDefault(); items.forEach(i => fadeOut(i)); }
+  else if (e.key === 'Escape') items.forEach(stop);
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    state.master = Math.max(0, Math.min(1, state.master + (e.key === 'ArrowUp' ? .05 : -.05)));
+    syncMaster(); save();
+  }
+});
+// Don't let Space/arrows act on whatever control was last clicked
+document.addEventListener('mouseup', () => setTimeout(() => document.activeElement?.blur()));
+</script>
+</body>
+</html>
